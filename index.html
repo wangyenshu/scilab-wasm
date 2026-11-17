@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scilab</title>
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #3a4a5c;
+    font: 14px/1.4 system-ui, sans-serif; color: #f2f2f0; }
+  /* x11.wasm draws every window (a canvas) in this element; its size is the
+     size of the X screen */
+  #x11-wasm-root { position: absolute; inset: 0; overflow: hidden; }
+  #splash { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; pointer-events: none; }
+  #splash h1 { margin: 0; font-weight: 600; letter-spacing: .02em; }
+  #bar { width: min(420px, 70vw); height: 6px; border-radius: 3px; background: #5b6b7d; overflow: hidden; }
+  #bar > div { height: 100%; width: 0; background: #e8b04a; transition: width .2s; }
+  #status { color: #c9d1da; font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  #log { position: absolute; left: 0; right: 0; bottom: 0; max-height: 30vh; overflow: auto;
+    margin: 0; padding: 6px 10px; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace;
+    background: rgba(0,0,0,.55); white-space: pre-wrap; display: none; }
+</style>
+</head>
+<body>
+<div id="x11-wasm-root"></div>
+<div id="splash">
+  <h1>Scilab</h1>
+  <div id="bar"><div></div></div>
+  <div id="status">Loading…</div>
+</div>
+<pre id="log"></pre>
+<script src="scilab-web.js"></script>
+<script>
+  // ?args=-e,disp(1) passes Scilab arguments (comma-separated);
+  // ?env=NAME=VALUE,... sets environment variables; ?log shows the output
+  var q = new URLSearchParams(location.search);
+  var splash = document.getElementById('splash');
+  var status = document.getElementById('status');
+  var bar = document.querySelector('#bar > div');
+  var log = document.getElementById('log');
+  if (q.has('log')) log.style.display = 'block';
+  function line(s) {
+    log.textContent += s + '\n';
+    log.scrollTop = log.scrollHeight;
+    if (/^Scilab|Startup|Loading|Initialization/.test(s)) status.textContent = s;
+  }
+  var env = {};
+  (q.get('env') || '').split(',').forEach(function (kv) {
+    var i = kv.indexOf('=');
+    if (i > 0) env[kv.slice(0, i)] = kv.slice(i + 1);
+  });
+  if (!crossOriginIsolated) {
+    status.textContent = 'Preparing the page (cross-origin isolation)…';
+  } else {
+    Scilab.run({
+      args: q.has('args') ? (q.get('args') ? q.get('args').split(',') : []) : [],
+      env: env,
+      onStdout: line,
+      onStderr: line,
+      onProgress: function (loaded, total) {
+        bar.style.width = (total ? 100 * loaded / total : 0) + '%';
+        status.textContent = 'Downloading ' + (loaded / 1048576).toFixed(0) + ' / ' +
+                             (total / 1048576).toFixed(0) + ' MB';
+        if (loaded >= total) status.textContent = 'Starting Scilab and Java…';
+      },
+      onExit: function (code) {
+        splash.style.display = 'flex';
+        status.textContent = 'Scilab exited (' + code + '). Reload the page to start again.';
+      },
+    }).then(function () {
+      // the console window replaces the splash when it appears
+      var root = document.getElementById('x11-wasm-root');
+      var obs = new MutationObserver(function () {
+        if (root.querySelector('canvas')) { splash.style.display = 'none'; obs.disconnect(); }
+      });
+      obs.observe(root, { childList: true, subtree: true });
+    }, function (e) {
+      status.textContent = String(e && e.message || e);
+    });
+  }
+</script>
+</body>
+</html>
